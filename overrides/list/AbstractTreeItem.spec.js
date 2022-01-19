@@ -43,7 +43,7 @@ describe('Ext.list.AbstractTreeItem', () => {
 				throw error;
 			});
 
-			cy.once('uncaught:exception', (err) => {
+			cy.on('uncaught:exception', (err) => {
 				expect(err.message).to.include(
 					'Cannot read properties of null'
 				);

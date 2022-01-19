@@ -68,7 +68,7 @@ describe('Ext.grid.Location', () => {
 				locationPrototype.refresh.$previous
 			);
 
-			cy.once('uncaught:exception', (err) => {
+			cy.on('uncaught:exception', (err) => {
 				expect(err.message).to.include(
 					'Cannot read properties of undefined'
 				);

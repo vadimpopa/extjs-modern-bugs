@@ -894,7 +894,7 @@ describe('Ext.field.ComboBox', () => {
 				SelectionModelPrototype.applySelected.$previous
 			);
 
-			cy.once('uncaught:exception', (err) => {
+			cy.on('uncaught:exception', (err) => {
 				expect(err.message).to.include(
 					'Cannot read properties of null'
 				);

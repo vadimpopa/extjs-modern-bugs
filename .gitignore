@@ -3,3 +3,4 @@
 #except specs files
 !*.spec.js
 !.gitignore
+/overrides/ViewModel.spec.js

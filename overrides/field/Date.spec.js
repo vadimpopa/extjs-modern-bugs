@@ -6,21 +6,9 @@ describe('Ext.field.Date', () => {
 		const fieldCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Date',
-			dateFormat: 'd.m.Y H:i',
+			dateFormat: 'dd.MM.y H:mm',
+			altFormats: null,
 		};
-
-		it('should remove time info', () => {
-			//Bypass the override
-			cy.stub(
-				DatePrototype,
-				'parseValue',
-				DatePrototype.parseValue.$previous
-			);
-
-			const dateField = new Ext.field.Date(fieldCfg);
-			dateField.setValue(stringDateValue);
-			expect(dateField.getRawValue()).not.to.be.eq(stringDateValue);
-		});
 
 		it('@override: should keep time info', () => {
 			const dateField = new Ext.field.Date(fieldCfg);

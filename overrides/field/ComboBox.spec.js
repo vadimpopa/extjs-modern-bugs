@@ -557,89 +557,6 @@ describe('Ext.field.ComboBox', () => {
 		});
 	});
 
-	describe('ExtJsBug-12: user is able to remove chip items in a readonly combo', () => {
-		const comboCfg = {
-			renderTo: Ext.getBody(),
-			label: 'Choose Country',
-			displayField: 'name',
-			valueField: 'abbr',
-			queryMode: 'local',
-			readOnly: true,
-			multiSelect: true,
-			value: ['c1', 'c2'],
-			store: {
-				data: [
-					{
-						name: 'Country 1',
-						abbr: 'c1',
-					},
-					{
-						name: 'Country 2',
-						abbr: 'c2',
-					},
-				],
-			},
-		};
-		const bypassOverrides = () => {
-			cy.stub(
-				ComboBoxPrototype,
-				'updateReadOnly',
-				Ext.field.Text.prototype.updateReadOnly
-			);
-			cy.stub(
-				ComboBoxPrototype,
-				'updateChipView',
-				Ext.field.Select.prototype.updateChipView
-			);
-		};
-
-		describe("chip item's close element visibility", () => {
-			const runScenario = function (chipCloseElExpectation) {
-				const combobox = new Ext.field.ComboBox(comboCfg);
-				cy.get(`#${combobox.getId()}`).as('comboEl');
-
-				cy.get('@comboEl')
-					.find('.x-chip')
-					.should('have.length', 2)
-					.find('.x-close-el')
-					.should(chipCloseElExpectation);
-			};
-
-			it('should be visible', () => {
-				bypassOverrides();
-				runScenario('be.visible');
-			});
-
-			it('should not be visible', () => {
-				runScenario('not.be.visible');
-			});
-		});
-
-		describe('removing selected chip elements', () => {
-			const runScenario = function (chipElsLength) {
-				const combobox = new Ext.field.ComboBox(comboCfg);
-				cy.get(`#${combobox.getId()}`).as('comboEl');
-
-				cy.get('@comboEl')
-					.find('.x-chip')
-					.as('chipEls')
-					.click({ multiple: true })
-					.last()
-					.type('{backspace}');
-				cy.get('@chipEls').should('have.length', chipElsLength);
-			};
-
-			it('should be able to remove elements', () => {
-				bypassOverrides();
-				runScenario(1);
-			});
-
-			it('should not be able to remove elements', () => {
-				runScenario(2);
-			});
-		});
-	});
-
 	describe('ExtJsBug-13: input value not updated when there is an empty store with memory proxy', () => {
 		const commonComboCfg = {
 			renderTo: Ext.getBody(),
@@ -913,5 +830,194 @@ describe('Ext.field.ComboBox', () => {
 		it('@override: should not throw when removing chips', () => {
 			runScenario(1);
 		});
+	});
+});
+
+describe('Ext.field.Select@ExtJsBug-5: user is able to remove/select chip items in a readonly/disabled combo', () => {
+	const comboCfg = {
+		renderTo: Ext.getBody(),
+		label: 'Choose Country',
+		displayField: 'name',
+		valueField: 'abbr',
+		queryMode: 'local',
+		multiSelect: true,
+		value: ['c1', 'c2'],
+		store: {
+			data: [
+				{
+					name: 'Country 1',
+					abbr: 'c1',
+				},
+				{
+					name: 'Country 2',
+					abbr: 'c2',
+				},
+			],
+		},
+	};
+	const readOnlyComboCfg = {
+		...comboCfg,
+		readOnly: true,
+		label: 'Readonly Combo',
+	};
+	const disabledComboCfg = {
+		...comboCfg,
+		disabled: true,
+		label: 'Disabled Combo',
+	};
+	const bypassOverrides = () => {
+		const SelectPrototype = Ext.field.Select.prototype;
+		cy.stub(
+			SelectPrototype,
+			'updateReadOnly',
+			Ext.field.Text.prototype.updateReadOnly
+		);
+		cy.stub(
+			SelectPrototype,
+			'updateDisabled',
+			Ext.field.Text.prototype.updateDisabled
+		);
+		cy.stub(
+			SelectPrototype,
+			'updateChipView',
+			SelectPrototype.updateChipView.$previous
+		);
+	};
+
+	describe("chip item's close element visibility", () => {
+		const runScenario = function (chipCloseElExpectation) {
+			const readOnlyCombo = new Ext.field.ComboBox(readOnlyComboCfg);
+			const disabledCombo = new Ext.field.ComboBox(disabledComboCfg);
+
+			[readOnlyCombo, disabledCombo].forEach((combobox) => {
+				cy.get(`#${combobox.getId()}`).as('comboEl');
+
+				cy.get('@comboEl')
+					.find('.x-chip')
+					.should('have.length', 2)
+					.find('.x-close-el')
+					.should(chipCloseElExpectation);
+			});
+		};
+
+		it('should be visible', () => {
+			bypassOverrides();
+			runScenario('be.visible');
+		});
+
+		it('@override: should not be visible', () => {
+			runScenario('not.be.visible');
+		});
+	});
+
+	describe('removing selected chip elements (by click select and BACKSPACE)', () => {
+		// No need to test disabled state in this spec since
+		// chip elements in that state are not selectable.
+		const runScenario = function (chipElsLength) {
+			const readOnlyCombo = new Ext.field.ComboBox(readOnlyComboCfg);
+
+			cy.get(`#${readOnlyCombo.getId()}`)
+				.find('.x-chip')
+				.as('chipEls')
+				.click({ multiple: true })
+				.last()
+				.type('{backspace}');
+			cy.get('@chipEls').should('have.length', chipElsLength);
+		};
+
+		it('should be able to remove elements', () => {
+			bypassOverrides();
+			runScenario(1);
+		});
+
+		it('@override: should not be able to remove elements', () => {
+			runScenario(2);
+		});
+	});
+
+	describe('should select chip on click', () => {
+		const runScenario = function (combo, selectedClassAssertion) {
+			cy.get(`#${combo.getId()} .x-chip`)
+				.should('have.length', 2)
+				.click({ multiple: true })
+				.should(selectedClassAssertion, 'x-selected');
+		};
+
+		it('simple combo (without readOnly or disabled): should select 2 chips', () => {
+			const combo = new Ext.field.ComboBox(comboCfg);
+			runScenario(combo, 'have.class');
+		});
+
+		describe('readOnly combo', () => {
+			it('should select 2 chips', () => {
+				bypassOverrides();
+				const combo = new Ext.field.ComboBox(readOnlyComboCfg);
+				runScenario(combo, 'have.class');
+			});
+
+			it('@override: should not select chips', () => {
+				const combo = new Ext.field.ComboBox(readOnlyComboCfg);
+				runScenario(combo, 'not.have.class');
+			});
+		});
+
+		describe('disabled combo', () => {
+			it('should select 2 chips', () => {
+				bypassOverrides();
+				const combo = new Ext.field.ComboBox(disabledComboCfg);
+				runScenario(combo, 'have.class');
+			});
+
+			it('@override: should not select chips', () => {
+				const combo = new Ext.field.ComboBox(disabledComboCfg);
+				runScenario(combo, 'not.have.class');
+			});
+		});
+	});
+});
+
+describe('Ext.dataview.ChipView@ExtJsBug-1: chip item element classes not synchronized on update', () => {
+	const comboCfg = {
+		renderTo: Ext.getBody(),
+		label: 'Choose Country',
+		displayField: 'name',
+		valueField: 'abbr',
+		queryMode: 'local',
+		multiSelect: true,
+		value: ['c1', 'c2'],
+		store: {
+			data: [
+				{
+					name: 'Country 1',
+					abbr: 'c1',
+				},
+			],
+		},
+	};
+	const runScenario = function (selectedClassAssertion) {
+		const combo = new Ext.field.ComboBox(comboCfg);
+		combo.setReadOnly(true);
+
+		cy.get(`#${combo.getId()}`)
+			.find('.x-chip')
+			.first()
+			.click()
+			.should('have.class', 'x-hovered')
+			.should(selectedClassAssertion, 'x-closable');
+	};
+
+	it('"x-closable" class should be available for readonly combo after chip click', () => {
+		const ChipViewPrototype = Ext.dataview.ChipView.prototype;
+		cy.stub(
+			ChipViewPrototype,
+			'syncItemRecord',
+			ChipViewPrototype.syncItemRecord.$previous
+		);
+
+		runScenario('have.class');
+	});
+
+	it('@override: "x-closable" class should not be available for readonly combo after chip click', () => {
+		runScenario('not.have.class');
 	});
 });

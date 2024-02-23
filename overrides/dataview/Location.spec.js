@@ -1,9 +1,8 @@
 describe('Ext.dataview.Location', () => {
-	const LocationPrototype = Ext.dataview.Location.prototype;
-
-	describe('ExtJsBug-1: infinite combo selecting wrong list item when filtered', () => {
+	describe('ExtJsBug-1(IntegratedFix): infinite combo selecting wrong list item when filtered', () => {
 		beforeEach(() => {
 			cy.intercept('/countries?*', {
+				delay: 100,
 				fixture: 'countries.json',
 			});
 		});
@@ -27,33 +26,24 @@ describe('Ext.dataview.Location', () => {
 				},
 			});
 
-			combobox
-				.getPicker()
-				.on('refresh', cy.spy().as('comboPickerRefreshSpy'));
+			const picker = combobox.getPicker();
 
-			cy.get(`#${combobox.getId()}`).within(() => {
-				cy.get('input')
-					.type('Russia')
-					.then(($input) => {
-						cy.get('@comboPickerRefreshSpy')
-							.should('have.been.called')
-							.then(() => $input);
-					})
-					.type('{enter}')
-					.should(assertion, 'Russian Federation');
-			});
+			combobox.getStore().on('load', cy.spy().as('comboStoreLoadSpy'));
+			picker.on('refresh', cy.spy().as('comboPickerRefreshSpy'));
+
+			cy.get('@comboStoreLoadSpy').should('have.been.called');
+			cy.get(`#${combobox.getId()} input`).as('comboInput');
+			cy.get('@comboInput').type('Rus');
+			// Wait for the picker list items to be filtered
+			// then continue typing in order to test location reusability
+			cy.get(picker.element.dom)
+				.contains('.x-boundlistitem', 'Belarus')
+				.should('be.visible');
+			cy.get('@comboInput').type('sia');
+			cy.get('@comboPickerRefreshSpy').should('have.been.called');
+			cy.get('@comboInput').type('{enter}');
+			cy.get('@comboInput').should(assertion, 'Russian Federation');
 		};
-
-		it('should select previously filtered item', () => {
-			//Bypass the override
-			cy.stub(
-				LocationPrototype,
-				'equals',
-				LocationPrototype.equals.$previous
-			);
-
-			runScenario('not.have.value');
-		});
 
 		it('@override: should select current filtered item', () => {
 			runScenario('have.value');

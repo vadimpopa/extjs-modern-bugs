@@ -1,7 +1,7 @@
 describe('Ext.grid.Location', () => {
-	describe('ExtJsBug-1: Fix trying to set location on an invisible column', () => {
+	describe('ExtJsBug-1(IntegratedFix): Fix trying to set location on an invisible column', () => {
 		const runScenario = function () {
-			const grid = Ext.create('Ext.grid.Grid', {
+			const grid = new Ext.grid.Grid({
 				title: 'People',
 				store: {
 					fields: ['name', 'email'],
@@ -57,32 +57,6 @@ describe('Ext.grid.Location', () => {
 					cy.get('@gridEl').find('.x-grid-body-el').click('left');
 				});
 		};
-
-		it('should throw when when hiding a column that had focus', (done) => {
-			// Bypass the override
-			const locationPrototype = Ext.grid.Location.prototype;
-
-			cy.stub(
-				locationPrototype,
-				'refresh',
-				locationPrototype.refresh.$previous
-			);
-
-			cy.on('uncaught:exception', (err) => {
-				expect(err.message).to.include(
-					'Cannot read properties of undefined'
-				);
-
-				// using mocha's async done callback to finish this test
-				// so we prove that an uncaught exception was thrown
-				done();
-
-				// return false to prevent the error from failing this test
-				return false;
-			});
-
-			runScenario();
-		});
 
 		it('@override: should not throw when when hiding a column that had focus', () => {
 			runScenario();

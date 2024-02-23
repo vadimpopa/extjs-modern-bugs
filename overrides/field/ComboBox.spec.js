@@ -1,30 +1,18 @@
 describe('Ext.field.ComboBox', () => {
 	const ComboBoxPrototype = Ext.field.ComboBox.prototype;
+	const countriesProxy = {
+		type: 'ajax',
+		url: '/countries',
+		reader: {
+			rootProperty: 'data',
+		},
+	};
 
 	beforeEach(() => {
-		cy.fixture('countries.json').then((countries) => {
-			// Interceptor with basic support for paging and filtering
-			cy.intercept('/countries?*', (req) => {
-				let result = countries;
-				let { start, limit, query } = Ext.Object.fromQueryString(
-					req.url
-				);
-
-				if (query) {
-					result = countries.filter((item) =>
-						item.name.includes(query)
-					);
-				}
-
-				start = parseInt(start, 10);
-				limit = parseInt(limit, 10);
-
-				req.reply(result.slice(start, limit));
-			});
-		});
+		cy.interceptCountriesRequest();
 	});
 
-	describe('ExtJsBug-1: local combo loads store on each expand', () => {
+	describe('ExtJsBug-1(IntegratedFix): local combo loads store on each expand', () => {
 		const comboCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Choose States',
@@ -42,23 +30,6 @@ describe('Ext.field.ComboBox', () => {
 			},
 		};
 
-		it('should load store on each trigger click/expand', () => {
-			//Bypass the override
-			cy.stub(
-				ComboBoxPrototype,
-				'doFilter',
-				ComboBoxPrototype.doFilter.$previous
-			);
-
-			const combobox = new Ext.field.ComboBox(comboCfg);
-			combobox
-				.getStore()
-				.on('beforeload', cy.spy().as('storeBeforeLoadSpy'));
-
-			cy.get(`#${combobox.getId()} .x-expandtrigger`).click();
-			cy.get('@storeBeforeLoadSpy').should('have.been.called');
-		});
-
 		it('@override: should not load store', () => {
 			const combobox = new Ext.field.ComboBox(comboCfg);
 			combobox
@@ -67,6 +38,108 @@ describe('Ext.field.ComboBox', () => {
 
 			cy.get(`#${combobox.getId()} .x-expandtrigger`).click();
 			cy.get('@storeBeforeLoadSpy').should('not.have.been.called');
+		});
+	});
+
+	describe('ExtJsBug(Regression-7.5.0): remote multiselect combo without forceSelection does not clear input value on ENTER when store not loaded', () => {
+		// Previous override for "onCollectionAdd" method was removed.
+		// Aside from the main spec, there are specs for local and remote combos with
+		// and without "forceSelection".
+		const commonComboCfg = {
+			renderTo: Ext.getBody(),
+			label: 'Choose Countries',
+			displayField: 'name',
+			valueField: 'code',
+			multiSelect: true,
+			store: {
+				proxy: countriesProxy,
+			},
+		};
+
+		const unexistingStoreValue = 'Atlantida';
+		const duringStoreLoadSpecFn = (title, comboCfg, expectedInputValue) => {
+			it(title, () => {
+				const combobox = new Ext.field.ComboBox(comboCfg);
+
+				cy.get(`#${combobox.getId()}`).within(() => {
+					cy.get('input')
+						.type(`${unexistingStoreValue}{ENTER}`)
+						.should('have.value', expectedInputValue)
+						.then(() => {
+							combobox.collapse();
+						});
+				});
+			});
+		};
+		const afterStoreLoadSpecFn = (title, comboCfg, expectedInputValue) => {
+			it(title, () => {
+				const combobox = new Ext.field.ComboBox(comboCfg);
+
+				cy.get(`#${combobox.getId()}`).within(() => {
+					const store = combobox.getStore();
+
+					store.on('load', cy.spy().as('comboStoreLoadSpy'));
+					store.load();
+					cy.get('@comboStoreLoadSpy')
+						.should('have.been.called')
+						.then(() => {
+							cy.get('input')
+								.type(`${unexistingStoreValue}{ENTER}`)
+								.should('have.value', expectedInputValue)
+								.then(() => {
+									combobox.collapse();
+								});
+						});
+				});
+			});
+		};
+
+		describe('remote combo with forceSelection', () => {
+			const comboCfg = {
+				...commonComboCfg,
+				queryMode: 'remote',
+				forceSelection: false,
+			};
+			const title = 'should not clear input value on ENTER';
+
+			duringStoreLoadSpecFn(title, comboCfg, '');
+			afterStoreLoadSpecFn(title, comboCfg, '');
+		});
+
+		describe('remote combo without forceSelection', () => {
+			const title = 'should clear input value on ENTER';
+			const comboCfg = {
+				...commonComboCfg,
+				queryMode: 'remote',
+				forceSelection: true,
+			};
+
+			duringStoreLoadSpecFn(title, comboCfg, unexistingStoreValue);
+			afterStoreLoadSpecFn(title, comboCfg, unexistingStoreValue);
+		});
+
+		describe('local combo with forceSelection', () => {
+			const title = 'should not clear input value on ENTER';
+			const comboCfg = {
+				...commonComboCfg,
+				queryMode: 'local',
+				forceSelection: false,
+			};
+
+			duringStoreLoadSpecFn(title, comboCfg, '');
+			afterStoreLoadSpecFn(title, comboCfg, '');
+		});
+
+		describe('local combo without forceSelection', () => {
+			const title = 'should clear input value on ENTER';
+			const comboCfg = {
+				...commonComboCfg,
+				queryMode: 'local',
+				forceSelection: true,
+			};
+
+			duringStoreLoadSpecFn(title, comboCfg, unexistingStoreValue);
+			afterStoreLoadSpecFn(title, comboCfg, unexistingStoreValue);
 		});
 	});
 
@@ -102,7 +175,7 @@ describe('Ext.field.ComboBox', () => {
 		});
 	});
 
-	describe('ExtJsBug-3: remote combo triggers store load while destroying', () => {
+	describe('ExtJsBug-3(IntegratedFix): remote combo triggers store load while destroying', () => {
 		const comboCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Choose States',
@@ -124,16 +197,6 @@ describe('Ext.field.ComboBox', () => {
 
 			expect(storeLoadSpy)[testMethod].have.been.called;
 		};
-
-		it('should trigger store load on destroy', () => {
-			//Bypass the override
-			cy.stub(
-				ComboBoxPrototype,
-				'applyPrimaryFilter',
-				ComboBoxPrototype.applyPrimaryFilter.$previous
-			);
-			runScenario('to');
-		});
 
 		it('@override: should not trigger store load on destroy', () => {
 			runScenario('not');
@@ -171,7 +234,7 @@ describe('Ext.field.ComboBox', () => {
 		});
 	});
 
-	describe('ExtJsBug-5: remote combo loads store on each expand', () => {
+	describe('ExtJsBug-5(IntegratedFix): remote combo loads store on each expand', () => {
 		const comboCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Choose Country',
@@ -179,21 +242,11 @@ describe('Ext.field.ComboBox', () => {
 			valueField: 'code',
 			queryMode: 'remote',
 			store: {
-				proxy: {
-					type: 'ajax',
-					url: '/countries',
-				},
+				proxy: countriesProxy,
 			},
 		};
 
-		it('should load store on each expand', () => {
-			//Bypass the override
-			cy.stub(
-				ComboBoxPrototype,
-				'doFilter',
-				ComboBoxPrototype.doFilter.$previous
-			);
-
+		const runScenario = (storeLoadCallCount) => {
 			const combobox = new Ext.field.ComboBox(comboCfg);
 
 			combobox.on('collapse', cy.spy().as('comboCollapseSpy'));
@@ -204,37 +257,31 @@ describe('Ext.field.ComboBox', () => {
 			cy.get(`#${combobox.getId()} .x-expandtrigger`).as('comboTrigger');
 
 			cy.get('@comboTrigger').click(); //expanding the first time
+			const picker = combobox.getPicker();
+			picker.on('refresh', cy.spy().as('comboPickerRefreshSpy'));
+			cy.get('@comboPickerRefreshSpy').should('have.been.called');
 			cy.get('@storeBeforeLoadSpy').should('have.been.calledOnce');
-			cy.get('@comboTrigger').click();
+			if (Cypress.browser.name === 'electron') {
+				// Only on electron the collapse click occurs too fast
+				cy.wait(200);
+			}
+			cy.get('@comboTrigger').click(); //collapsing
 			cy.get('@comboCollapseSpy').should('have.been.called');
+
 			cy.get('@comboTrigger').click(); //expanding the second time
-			cy.get('@storeBeforeLoadSpy').should('have.been.calledTwice');
-			cy.get('@comboTrigger').click();
-			cy.get('@comboCollapseSpy').should('have.been.calledTwice');
-		});
+			cy.get('@storeBeforeLoadSpy')
+				.should('have.been.callCount', storeLoadCallCount)
+				.then(() => {
+					combobox.collapse();
+				});
+		};
 
 		it('@override: should load store only on first expand', () => {
-			const combobox = new Ext.field.ComboBox(comboCfg);
-
-			combobox.on('collapse', cy.spy().as('comboCollapseSpy'));
-			combobox
-				.getStore()
-				.on('beforeload', cy.spy().as('storeBeforeLoadSpy'));
-
-			cy.get(`#${combobox.getId()} .x-expandtrigger`).as('comboTrigger');
-
-			cy.get('@comboTrigger').click(); //expanding the second time
-			cy.get('@storeBeforeLoadSpy').should('have.been.calledOnce');
-			cy.get('@comboTrigger').click();
-			cy.get('@comboCollapseSpy').should('have.been.called');
-			cy.get('@comboTrigger').click(); //expanding the second time
-			cy.get('@storeBeforeLoadSpy').should('have.been.calledOnce');
-			cy.get('@comboTrigger').click();
-			cy.get('@comboCollapseSpy').should('have.been.calledTwice');
+			runScenario(1);
 		});
 	});
 
-	describe('ExtJsBug-6: remote combo clears original value on store load if it is not in resultset', () => {
+	describe('ExtJsBug-6(IntegratedFix): remote combo clears original value on store load if it is not in resultset', () => {
 		const comboCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Choose Country',
@@ -244,14 +291,11 @@ describe('Ext.field.ComboBox', () => {
 			value: 'c100',
 			store: {
 				data: [{ code: 'c100', name: 'Country 100' }],
-				proxy: {
-					type: 'ajax',
-					url: '/countries',
-				},
+				proxy: countriesProxy,
 			},
 		};
 
-		const expandCombo = function (comboCfg, testMethod) {
+		const runScenario = function (comboCfg, expectedInputValue) {
 			const combobox = new Ext.field.ComboBox(comboCfg);
 
 			cy.get(`#${combobox.getId()}`).within(() => {
@@ -264,48 +308,40 @@ describe('Ext.field.ComboBox', () => {
 				cy.get('.x-expandtrigger').click();
 				cy.get('@comboPickerRefreshSpy').should('have.been.called');
 				cy.get('input')
-					.should(testMethod, '')
+					.should('have.value', expectedInputValue)
 					.then(() => {
 						combobox.collapse();
 					});
 			});
 		};
 
-		it('should clear original value on expand', () => {
-			//Bypass the override
-			cy.stub(
-				ComboBoxPrototype,
-				'syncValue',
-				Ext.field.Select.prototype.syncValue
+		it('@override: should NOT keep original value on expand when "keepOriginalValue: false"', () => {
+			runScenario(
+				{
+					...comboCfg,
+					keepOriginalValue: false,
+				},
+				''
 			);
-			expandCombo(comboCfg, 'have.value');
 		});
 
-		it('@override: should keep original value on expand', () => {
-			expandCombo(comboCfg, 'not.have.value');
-			expandCombo(
+		it('@override: should keep original value on expand when "keepOriginalValue: true"', () => {
+			runScenario(
 				{
-					renderTo: Ext.getBody(),
-					label: 'Choose Country',
-					displayField: 'name',
+					...comboCfg,
 					valueField: 'name',
-					queryMode: 'remote',
-					value: 'c100',
 					autoLoadOnValue: true,
 					keepOriginalValue: true,
 					store: {
-						proxy: {
-							type: 'ajax',
-							url: '/countries',
-						},
+						proxy: countriesProxy,
 					},
 				},
-				'not.have.value'
+				'c100'
 			);
 		});
 	});
 
-	describe('ExtJsBug-7: remote combo with force selection clears input value on filtering and expand', () => {
+	describe('ExtJsBug-7(IntegratedFix): remote combo with force selection clears input value on filtering and expand', () => {
 		const comboCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Choose Country',
@@ -314,10 +350,7 @@ describe('Ext.field.ComboBox', () => {
 			queryMode: 'remote',
 			autoLoadOnValue: true,
 			store: {
-				proxy: {
-					type: 'ajax',
-					url: '/countries',
-				},
+				proxy: countriesProxy,
 			},
 		};
 
@@ -326,12 +359,16 @@ describe('Ext.field.ComboBox', () => {
 
 			const runScenario = function (endValue) {
 				const combobox = new Ext.field.ComboBox({
-					value: comboValue,
 					...comboCfg,
+					value: comboValue,
 				});
 
 				cy.get(`#${combobox.getId()}`).within(() => {
 					cy.get('input').should('have.value', comboValue);
+
+					combobox.getStore().on('load', cy.spy().as('storeLoadSpy'));
+
+					cy.get('@storeLoadSpy').should('have.been.called');
 
 					combobox
 						.getPicker()
@@ -347,27 +384,19 @@ describe('Ext.field.ComboBox', () => {
 				});
 			};
 
-			it('should clear value', () => {
-				//Bypass the override
-				cy.stub(
-					ComboBoxPrototype,
-					'syncValue',
-					Ext.field.Select.prototype.syncValue
-				);
-
-				runScenario('');
-			});
-
 			it('@override: should keep value', () => {
 				const comboValueWithoutLastChar = comboValue.slice(0, -1);
 				runScenario(comboValueWithoutLastChar);
 			});
 		});
 
-		describe('On expand', () => {
-			const comboValue = 'Uruguay';
-			const runScenario = function (inputValue, actualValue) {
-				const combobox = new Ext.field.ComboBox(comboCfg);
+		describe('On expand (with "keepOriginal: true")', () => {
+			it('@override: should keep value', () => {
+				const comboValue = 'Uruguay';
+				const combobox = new Ext.field.ComboBox({
+					...comboCfg,
+					keepOriginalValue: true,
+				});
 
 				cy.get(`#${combobox.getId()}`).within(() => {
 					combobox
@@ -375,37 +404,24 @@ describe('Ext.field.ComboBox', () => {
 						.on('refresh', cy.spy().as('comboPickerRefreshSpy'));
 					cy.get('.x-expandtrigger').as('comboTrigger');
 
-					cy.get('input').type(inputValue);
+					cy.get('input').as('inputEl').type(comboValue);
 					cy.get('@comboPickerRefreshSpy').should('have.been.called');
 
 					// Type a value of next pages
-					cy.get('input')
-						.should('have.value', inputValue)
-						.then(() => {
+					cy.get('@inputEl')
+						.should('have.value', comboValue)
+						.then(($el) => {
+							combobox.collapse();
 							cy.get('@comboTrigger').click();
 							cy.get('@comboPickerRefreshSpy').should(
 								'have.been.calledTwice'
 							);
-							cy.get('input').should('have.value', actualValue);
-							expect(combobox.getValue()).to.be.eq(inputValue);
+							cy.get($el).should('have.value', comboValue);
+						})
+						.then(() => {
 							combobox.collapse();
 						});
 				});
-			};
-
-			it('should clear value', () => {
-				//Bypass the override
-				cy.stub(
-					ComboBoxPrototype,
-					'syncValue',
-					Ext.field.Select.prototype.syncValue
-				);
-
-				runScenario(comboValue, '');
-			});
-
-			it('@override: should keep value', () => {
-				runScenario(comboValue, comboValue);
 			});
 		});
 	});
@@ -422,10 +438,7 @@ describe('Ext.field.ComboBox', () => {
 			forceSelection: true,
 			store: {
 				autoLoad: true,
-				proxy: {
-					type: 'ajax',
-					url: '/countries',
-				},
+				proxy: countriesProxy,
 			},
 		};
 		const nonExistingValue = 'none';
@@ -462,10 +475,7 @@ describe('Ext.field.ComboBox', () => {
 			value: ['AF', 'AX'],
 			store: {
 				autoLoad: true,
-				proxy: {
-					type: 'ajax',
-					url: '/countries',
-				},
+				proxy: countriesProxy,
 			},
 		};
 		const inputQuery = 'dova';
@@ -503,7 +513,7 @@ describe('Ext.field.ComboBox', () => {
 		});
 	});
 
-	describe('ExtJsBug-10: "onEnterKey" method not being called when boundlist is expanded', () => {
+	describe('ExtJsBug-10(IntegratedFix): "onEnterKey" method not being called when boundlist is expanded', () => {
 		const comboCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Choose Countries',
@@ -516,10 +526,7 @@ describe('Ext.field.ComboBox', () => {
 			value: ['AF', 'AX'],
 			store: {
 				autoLoad: true,
-				proxy: {
-					type: 'ajax',
-					url: '/countries',
-				},
+				proxy: countriesProxy,
 			},
 		};
 
@@ -545,19 +552,12 @@ describe('Ext.field.ComboBox', () => {
 				});
 		};
 
-		it('should not call "onEnterKey" method', () => {
-			// Bypass the override
-			cy.stub(ComboBoxPrototype, 'onSpecialKey', Ext.emptyFn);
-
-			runScenario('not.have.been.called');
-		});
-
 		it('should call "onEnterKey" method', () => {
 			runScenario('have.been.called');
 		});
 	});
 
-	describe('ExtJsBug-13: input value not updated when there is an empty store with memory proxy', () => {
+	describe('ExtJsBug-13(IntegratedFix): input value not updated when there is an empty store with memory proxy', () => {
 		const commonComboCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Memory Proxy Combo',
@@ -596,17 +596,6 @@ describe('Ext.field.ComboBox', () => {
 					proxy: memoryProxyCfg,
 				},
 			};
-
-			it('should not update input value without override', () => {
-				// Bypass the override
-				cy.stub(
-					ComboBoxPrototype,
-					'updateStore',
-					Ext.field.Select.prototype.updateStore
-				);
-
-				runScenario(comboCfg, 'not.have.value');
-			});
 
 			it('should update input value', () => {
 				runScenario(comboCfg, 'have.value');
@@ -680,7 +669,7 @@ describe('Ext.field.ComboBox', () => {
 	});
 
 	describe(
-		'ExtJsBug-14: remote multiselect combo with force selection ' +
+		'ExtJsBug-14(IntegratedFix): remote multiselect combo with force selection ' +
 			'resets selection when filtered with input query that matches "valueField" value',
 		() => {
 			const comboCfg = {
@@ -694,10 +683,7 @@ describe('Ext.field.ComboBox', () => {
 				value: ['Albania', 'Algeria'],
 				store: {
 					autoLoad: true,
-					proxy: {
-						type: 'ajax',
-						url: '/countries',
-					},
+					proxy: countriesProxy,
 				},
 			};
 			const inputQuery = 'Monaco';
@@ -728,24 +714,13 @@ describe('Ext.field.ComboBox', () => {
 				});
 			};
 
-			it('should reset selection on remote filter', () => {
-				// Bypass the override
-				cy.stub(
-					ComboBoxPrototype,
-					'syncValue',
-					Ext.field.Select.prototype.syncValue
-				);
-
-				runScenario(1);
-			});
-
 			it('@override: should not reset selection on remote filter', () => {
 				runScenario(2);
 			});
 		}
 	);
 
-	describe('Ext.dataview.selection.Model@ExtJsBug-2: remote multi combo with unordered values throws error when filtered and then removing chip elements', () => {
+	describe('Ext.dataview.selection.Model@ExtJsBug-2(IntegratedFix): remote multi combo with unordered values throws error when filtered and then removing chip elements', () => {
 		const comboCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Choose Country',
@@ -756,10 +731,7 @@ describe('Ext.field.ComboBox', () => {
 			autoLoadOnValue: true,
 			value: ['BE', 'AL'],
 			store: {
-				proxy: {
-					type: 'ajax',
-					url: '/countries',
-				},
+				proxy: countriesProxy,
 			},
 		};
 		const runScenario = (endChipsCount) => {
@@ -800,40 +772,356 @@ describe('Ext.field.ComboBox', () => {
 			});
 		};
 
-		it('should throw when removing chips', (done) => {
-			const SelectionModelPrototype =
-				Ext.dataview.selection.Model.prototype;
-
-			// Bypass the override
-			cy.stub(
-				SelectionModelPrototype,
-				'applySelected',
-				SelectionModelPrototype.applySelected.$previous
-			);
-
-			cy.on('uncaught:exception', (err) => {
-				expect(err.message).to.include(
-					'Cannot read properties of null'
-				);
-
-				// using mocha's async done callback to finish this test
-				// so we prove that an uncaught exception was thrown
-				done();
-
-				// return false to prevent the error from failing this test
-				return false;
-			});
-
-			runScenario(2);
-		});
-
 		it('@override: should not throw when removing chips', () => {
 			runScenario(1);
 		});
 	});
+
+	describe(
+		'ExtJsBug-15(IntegratedFix): multiselect combo without force selection not firing "change" event' +
+			' when adding non-store values',
+		() => {
+			const comboCfg = {
+				renderTo: Ext.getBody(),
+				label: 'Choose Country',
+				displayField: 'name',
+				valueField: 'abbr',
+				queryMode: 'local',
+				multiSelect: true,
+				forceSelection: false,
+				value: ['c1'],
+				store: {
+					data: [
+						{
+							name: 'Country1',
+							abbr: 'c1',
+						},
+						{
+							name: 'Country2',
+							abbr: 'c2',
+						},
+					],
+				},
+			};
+
+			const runScenario = (listenerCallCount) => {
+				const combobox = new Ext.field.ComboBox(comboCfg);
+
+				cy.get(`#${combobox.getId()}`).within(() => {
+					combobox.on('change', cy.spy().as('comboChangeSpy'));
+
+					cy.get('input')
+						.type('Country2{ENTER}') // store value
+						.type('ViaEnter{ENTER}')
+						.type(`ViaDelimiterType${combobox.getDelimiter()}`)
+						.type('ViaFocusLose')
+						.blur();
+
+					cy.get('@comboChangeSpy').should(
+						'have.been.callCount',
+						listenerCallCount
+					);
+
+					cy.get('.x-body-el')
+						.find('.x-chip')
+						.its('length')
+						.should('eq', 5)
+						.then(() => {
+							combobox.collapse();
+						});
+				});
+			};
+
+			it('@override: should fire "change" event for all changes', () => {
+				runScenario(4);
+			});
+		}
+	);
+
+	describe('ExtJsBug-16(IntegratedFix): remote combo collapses when the input query text matches filtered store record "valueField" value', () => {
+		const comboCfg = {
+			renderTo: Ext.getBody(),
+			label: 'Choose Country',
+			displayField: 'name',
+			valueField: 'code',
+			queryMode: 'remote',
+			forceSelection: false,
+			store: {
+				proxy: countriesProxy,
+			},
+		};
+		const inputQuery = 'Canada';
+
+		const runScenario = (collapseSpyExpectation) => {
+			const combobox = new Ext.field.ComboBox(comboCfg);
+
+			combobox.on('collapse', cy.spy().as('comboCollapseSpy'));
+			combobox
+				.getPicker()
+				.on('refresh', cy.spy().as('comboPickerRefreshSpy'));
+
+			cy.get(`#${combobox.getId()} input`).type(inputQuery);
+
+			cy.get(`#${combobox.getPicker().getId()}`)
+				.should('be.visible')
+				.contains(inputQuery);
+
+			cy.get('@comboPickerRefreshSpy').should('have.been.called');
+			cy.get('@comboCollapseSpy')
+				.should(collapseSpyExpectation)
+				.then(() => {
+					combobox.collapse();
+				});
+		};
+
+		it('@override: should not collapse when input query matches filtered record value', () => {
+			runScenario('not.have.been.called');
+		});
+	});
+
+	describe(
+		'ExtJsBug-17(IntegratedFix): clearable multiselect remote combo with "forceSelection" set to false,' +
+			' is not updating chip elements on clear trigger click, after adding a new value',
+		() => {
+			const comboCfg = {
+				renderTo: Ext.getBody(),
+				label: 'Choose Country',
+				displayField: 'name',
+				valueField: 'code',
+				queryMode: 'remote',
+				forceSelection: false,
+				multiSelect: true,
+				store: {
+					proxy: countriesProxy,
+				},
+			};
+
+			const runScenario = (expectedChipElsCount) => {
+				const combobox = new Ext.field.ComboBox(comboCfg);
+
+				combobox
+					.getStore()
+					.on('beforeload', cy.spy().as('storeBeforeLoadSpy'));
+
+				cy.get(`#${combobox.getId()}`).within(() => {
+					cy.get('input').type('dummyValue');
+					cy.get('@storeBeforeLoadSpy').should('have.been.called');
+					cy.get('input').type('{ENTER}');
+
+					cy.get('.x-cleartrigger').click();
+
+					cy.get('.x-body-el .x-chip')
+						.should('have.length', expectedChipElsCount)
+						.then(() => {
+							combobox.collapse();
+						});
+				});
+			};
+
+			it('@override: should clear chip elements on clear trigger click', () => {
+				runScenario(0);
+			});
+		}
+	);
+
+	describe(
+		'ExtJsBug-18(IntegratedFix): multiselect remote combo with "forceSelection" set to false,' +
+			' and "autoFocusLast" set to false, throwing an error on expand when it has' +
+			' user entered value (not present in the store)',
+		() => {
+			const comboCfg = {
+				renderTo: Ext.getBody(),
+				label: 'Choose Country',
+				displayField: 'name',
+				valueField: 'code',
+				queryMode: 'remote',
+				autoFocusLast: false,
+				forceSelection: false,
+				multiSelect: true,
+				value: ['dummyValue'],
+				autoLoadOnValue: true,
+				store: {
+					proxy: countriesProxy,
+				},
+			};
+
+			const runScenario = () => {
+				const combobox = new Ext.field.ComboBox(comboCfg);
+
+				combobox
+					.getStore()
+					.on('load', cy.spy().as('comboStoreLoadSpy'));
+
+				cy.get(`#${combobox.getId()}`).within(() => {
+					cy.get('@comboStoreLoadSpy').should('have.been.called');
+
+					cy.get('.x-expandtrigger').click();
+
+					cy.wrap(combobox)
+						.its('expanded')
+						.should('not.eql', false)
+						.then(() => {
+							combobox.collapse();
+						});
+				});
+			};
+
+			it('@override: should not throw on expand', () => {
+				runScenario();
+			});
+		}
+	);
+
+	describe('EXTJS-28512(Regression-7.5.0): issue results multiple query to perform action on search and then convert typed value to tag', () => {
+		const comboCfg = {
+			renderTo: Ext.getBody(),
+			label: 'Choose Countries',
+			queryMode: 'remote',
+			displayField: 'name',
+			valueField: 'code',
+			multiSelect: true,
+			forceSelection: false,
+			store: {
+				proxy: countriesProxy,
+			},
+		};
+		const inputQuery = 'dova';
+
+		const runScenario = function (endInputValue) {
+			const combobox = new Ext.field.ComboBox(comboCfg);
+
+			cy.get(`#${combobox.getId()}`).within(() => {
+				combobox
+					.getStore()
+					.on('load', cy.spy().as('comboStoreLoadSpy'));
+				combobox
+					.getPicker()
+					.on('refresh', cy.spy().as('comboPickerRefreshSpy'));
+
+				cy.get('input').type(inputQuery);
+				cy.get('@comboPickerRefreshSpy').should('have.been.called');
+
+				cy.get('input').should('have.value', endInputValue);
+				cy.get('@comboStoreLoadSpy').should('have.been.calledOnce');
+
+				cy.get('.x-body-el .x-chip')
+					.should('have.length', 0)
+					.then(() => {
+						combobox.collapse();
+					});
+			});
+		};
+
+		it('should load store once and keep input value, fixed in 7.5.0', () => {
+			runScenario(inputQuery);
+		});
+	});
+
+	describe(
+		'ExtJsBug-19(IntegratedFix): multi select remote combo with "forceSelection" set to true, is clearing ' +
+			'input filter value on store load, when a selected value record is loaded in the store.',
+		() => {
+			it('@override: it should keep input value on store load', () => {
+				const comboCfg = {
+					renderTo: Ext.getBody(),
+					label: 'Choose Countries',
+					queryMode: 'remote',
+					displayField: 'name',
+					valueField: 'code',
+					multiSelect: true,
+					forceSelection: true,
+					store: {
+						proxy: countriesProxy,
+					},
+				};
+
+				const combobox = new Ext.field.ComboBox(comboCfg);
+
+				combobox.getStore().on('load', cy.spy().as('storeLoadSpy'));
+
+				cy.get(`#${combobox.getId()} input`)
+					.as('comboInput')
+					.type('Belg');
+				// Selecting "Belgium"
+				cy.get(`#${combobox.getPicker().getId()}`)
+					.find('.x-boundlistitem')
+					.eq(0)
+					.click();
+				// Typing a query that will return the previous
+				// selecting value "Belgium"
+				cy.get('@comboInput').type('Bel');
+				cy.get('@storeLoadSpy').should('have.been.calledTwice');
+				cy.get('@comboInput')
+					.should('have.value', 'Bel')
+					.then(() => {
+						combobox.collapse();
+					});
+			});
+		}
+	);
+
+	describe(
+		'ExtJSBug-20(IntegratedFix): local combo without "forceSelection" ' +
+			'updating selection, while the user is typing, if the typed value ' +
+			'matches by "valueField" an existing record from the store',
+		() => {
+			const comboCfg = {
+				renderTo: Ext.getBody(),
+				label: 'Choose Countries',
+				queryMode: 'local',
+				displayField: 'name',
+				valueField: 'code',
+				forceSelection: false,
+				store: {
+					data: [
+						{
+							name: 'Test1',
+							code: 'test',
+						},
+						{
+							name: 'Test2',
+							code: 'tester',
+						},
+					],
+				},
+			};
+
+			it('@override: it should not change input value while user is typing', () => {
+				const combobox = new Ext.field.ComboBox(comboCfg);
+				const typedValue = 'test'; //note that it matches a store record by "code"
+				cy.spy(combobox, 'syncValue').as('syncValueSpy');
+
+				cy.get(`#${combobox.getId()} input`)
+					.as('comboInput')
+					.type(typedValue);
+				cy.get('@syncValueSpy').should('have.been.called');
+				cy.wrap(combobox).its('_inputValue').should('eq', typedValue);
+				cy.get('@comboInput')
+					.should('have.value', typedValue)
+					.then(() => {
+						combobox.collapse();
+					});
+			});
+
+			it('@override: it should collapse the combo on clear trigger click', () => {
+				const combobox = new Ext.field.ComboBox(comboCfg);
+
+				cy.get(`#${combobox.getId()} input`).type('test');
+				cy.get(`#${combobox.getPicker().getId()}`)
+					.as('pickerEl')
+					.should('be.visible');
+				cy.get(`#${combobox.getId()} .x-cleartrigger`).click();
+				cy.get('@pickerEl')
+					.should('not.be.visible')
+					.then(() => {
+						combobox.collapse();
+					});
+			});
+		}
+	);
 });
 
-describe('Ext.field.Select@ExtJsBug-5: user is able to remove/select chip items in a readonly/disabled combo', () => {
+describe('Ext.field.Select@ExtJsBug-5(IntegratedFix): user is able to remove/select chip items in a readonly/disabled combo', () => {
 	const comboCfg = {
 		renderTo: Ext.getBody(),
 		label: 'Choose Country',
@@ -865,24 +1153,6 @@ describe('Ext.field.Select@ExtJsBug-5: user is able to remove/select chip items 
 		disabled: true,
 		label: 'Disabled Combo',
 	};
-	const bypassOverrides = () => {
-		const SelectPrototype = Ext.field.Select.prototype;
-		cy.stub(
-			SelectPrototype,
-			'updateReadOnly',
-			Ext.field.Text.prototype.updateReadOnly
-		);
-		cy.stub(
-			SelectPrototype,
-			'updateDisabled',
-			Ext.field.Text.prototype.updateDisabled
-		);
-		cy.stub(
-			SelectPrototype,
-			'updateChipView',
-			SelectPrototype.updateChipView.$previous
-		);
-	};
 
 	describe("chip item's close element visibility", () => {
 		const runScenario = function (chipCloseElExpectation) {
@@ -899,11 +1169,6 @@ describe('Ext.field.Select@ExtJsBug-5: user is able to remove/select chip items 
 					.should(chipCloseElExpectation);
 			});
 		};
-
-		it('should be visible', () => {
-			bypassOverrides();
-			runScenario('be.visible');
-		});
 
 		it('@override: should not be visible', () => {
 			runScenario('not.be.visible');
@@ -925,11 +1190,6 @@ describe('Ext.field.Select@ExtJsBug-5: user is able to remove/select chip items 
 			cy.get('@chipEls').should('have.length', chipElsLength);
 		};
 
-		it('should be able to remove elements', () => {
-			bypassOverrides();
-			runScenario(1);
-		});
-
 		it('@override: should not be able to remove elements', () => {
 			runScenario(2);
 		});
@@ -949,12 +1209,6 @@ describe('Ext.field.Select@ExtJsBug-5: user is able to remove/select chip items 
 		});
 
 		describe('readOnly combo', () => {
-			it('should select 2 chips', () => {
-				bypassOverrides();
-				const combo = new Ext.field.ComboBox(readOnlyComboCfg);
-				runScenario(combo, 'have.class');
-			});
-
 			it('@override: should not select chips', () => {
 				const combo = new Ext.field.ComboBox(readOnlyComboCfg);
 				runScenario(combo, 'not.have.class');
@@ -962,12 +1216,6 @@ describe('Ext.field.Select@ExtJsBug-5: user is able to remove/select chip items 
 		});
 
 		describe('disabled combo', () => {
-			it('should select 2 chips', () => {
-				bypassOverrides();
-				const combo = new Ext.field.ComboBox(disabledComboCfg);
-				runScenario(combo, 'have.class');
-			});
-
 			it('@override: should not select chips', () => {
 				const combo = new Ext.field.ComboBox(disabledComboCfg);
 				runScenario(combo, 'not.have.class');
@@ -976,7 +1224,60 @@ describe('Ext.field.Select@ExtJsBug-5: user is able to remove/select chip items 
 	});
 });
 
-describe('Ext.dataview.ChipView@ExtJsBug-1: chip item element classes not synchronized on update', () => {
+describe(
+	'Ext.field.Select@ExtJsBug-6(IntegratedFix): Fix multiselect combo with memory proxy does not update its' +
+		'selection upon initialization if "multiSelect" config is specified before "value" config',
+	() => {
+		const comboValue = ['first'];
+		const comboCfg = {
+			renderTo: Ext.getBody(),
+			label: 'Memory Proxy Combo',
+			xtype: 'combobox',
+			// "multiSelect" should be before "value"
+			// for the bug to be reproducible
+			multiSelect: true,
+			value: comboValue,
+			valueField: 'id',
+			displayField: 'name',
+			queryMode: 'local',
+			forceSelection: false,
+			store: {
+				proxy: {
+					type: 'memory',
+				},
+			},
+		};
+
+		const runScenario = function (chipElsCount) {
+			const combo = new Ext.field.ComboBox(comboCfg);
+
+			cy.get(`#${combo.getId()}`).within(() => {
+				cy.wrap(combo)
+					.its('_value')
+					.should('eql', comboValue)
+					.then(() => {
+						const selection = combo.getSelection();
+						if (chipElsCount) {
+							expect(selection).to.have.lengthOf(chipElsCount);
+						} else {
+							expect(selection).to.eq(null);
+						}
+
+						cy.get('.x-chipview-body-el')
+							.children()
+							// "+1" because chipview also contain the input element
+							.should('have.length', chipElsCount + 1);
+					});
+			});
+		};
+
+		it('should have visible selected value', () => {
+			runScenario(1);
+		});
+	}
+);
+
+describe('Ext.dataview.ChipView@ExtJsBug-1(IntegratedFix): chip item element classes not synchronized on update', () => {
 	const comboCfg = {
 		renderTo: Ext.getBody(),
 		label: 'Choose Country',
@@ -1005,17 +1306,6 @@ describe('Ext.dataview.ChipView@ExtJsBug-1: chip item element classes not synchr
 			.should('have.class', 'x-hovered')
 			.should(selectedClassAssertion, 'x-closable');
 	};
-
-	it('"x-closable" class should be available for readonly combo after chip click', () => {
-		const ChipViewPrototype = Ext.dataview.ChipView.prototype;
-		cy.stub(
-			ChipViewPrototype,
-			'syncItemRecord',
-			ChipViewPrototype.syncItemRecord.$previous
-		);
-
-		runScenario('have.class');
-	});
 
 	it('@override: "x-closable" class should not be available for readonly combo after chip click', () => {
 		runScenario('not.have.class');

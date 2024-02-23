@@ -1,5 +1,5 @@
 describe('Ext.tab.Bar', () => {
-	describe('ExtJsBug-2: Fix trying to show active indicator element of a tab that was destroyed', () => {
+	describe('ExtJsBug-2(IntegratedFix): Fix trying to show active indicator element of a tab that was destroyed', () => {
 		const runScenarion = () => {
 			const tabPanel = new Ext.tab.Panel({
 				renderTo: Ext.getBody(),
@@ -27,7 +27,7 @@ describe('Ext.tab.Bar', () => {
 			});
 
 			cy.contains(`#${tabPanel.getId()} .x-tab`, 'Third')
-				.click()
+				.click('left') // "left" to ensure that close element is not missclicked
 				.find('.x-close-icon-el')
 				.click()
 				.then(() => {
@@ -40,31 +40,6 @@ describe('Ext.tab.Bar', () => {
 					cy.get('@animationEndSpy').should('have.been.called');
 				});
 		};
-
-		it('should throw error on animation end', (done) => {
-			const TabbarPrototype = Ext.tab.Bar.prototype;
-			//Bypass the override
-			cy.stub(
-				TabbarPrototype,
-				'animateTabIndicator',
-				TabbarPrototype.animateTabIndicator.$previous
-			);
-
-			cy.on('uncaught:exception', (err) => {
-				expect(err.message).to.include(
-					'Cannot read properties of null'
-				);
-
-				// using mocha's async done callback to finish this test
-				// so we prove that an uncaught exception was thrown
-				done();
-
-				// return false to prevent the error from failing this test
-				return false;
-			});
-
-			runScenarion();
-		});
 
 		it('@override: should not throw error on animation end', () => {
 			runScenarion();

@@ -1,5 +1,5 @@
 describe('Ext.scroll.VirtualScroller', () => {
-	describe("ExtJsBug-1: combobox's infinite picker collapsing on bar indicator scroller click", () => {
+	describe("ExtJsBug-1(IntegratedFix): combobox's infinite picker collapsing on bar indicator scroller click", () => {
 		const comboCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Combo with infinite picker',
@@ -50,6 +50,12 @@ describe('Ext.scroll.VirtualScroller', () => {
 				'Ext.scroll.VirtualScroller'
 			);
 
+			// Stub the method, as it is not relevat to this specific,
+			// spec, and as it is called on different intervals
+			// based on the available resources on the host machine,
+			// making the scenario throw an error and we get a flaky test.
+			cy.stub(combobox, 'realignFloatedPicker');
+
 			cy.get(`#${combobox.getPicker().getId()}`)
 				.as('comboPickerEl')
 				.find('.x-scrollbar.x-vertical')
@@ -62,19 +68,6 @@ describe('Ext.scroll.VirtualScroller', () => {
 					combobox.collapse();
 				});
 		};
-
-		it('combo should collapse on scroller click', () => {
-			const VirtualScrollerPrototype =
-				Ext.scroll.VirtualScroller.prototype;
-
-			cy.stub(
-				VirtualScrollerPrototype,
-				'createYIndicator',
-				VirtualScrollerPrototype.createYIndicator.$previous
-			);
-
-			runScenario('not.be.visible');
-		});
 
 		it('@override: combo should not collapse on scroller click', () => {
 			runScenario('be.visible');

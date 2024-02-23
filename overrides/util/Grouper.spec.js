@@ -1,5 +1,5 @@
 describe('Ext.util.Grouper', () => {
-	describe('ExtJsBug-1: repeated sorting on grouped grid column throwing error', () => {
+	describe('ExtJsBug-1(IntegratedFix): repeated sorting on grouped grid column throwing error', () => {
 		const runScenario = function () {
 			const grid = new Ext.grid.Grid({
 				renderTo: Ext.getBody(),
@@ -49,32 +49,6 @@ describe('Ext.util.Grouper', () => {
 					cy.get('@firstHeaderEl').click().click();
 				});
 		};
-
-		it('should throw error on multiple sort', (done) => {
-			const GrouperPrototype = Ext.util.Grouper.prototype;
-
-			//Bypass the override
-			cy.stub(
-				GrouperPrototype,
-				'notify',
-				GrouperPrototype.notify.$previous
-			);
-
-			cy.on('uncaught:exception', (err) => {
-				expect(err.message).to.include(
-					'Cannot read properties of undefined'
-				);
-
-				// using mocha's async done callback to finish this test
-				// so we prove that an uncaught exception was thrown
-				done();
-
-				// return false to prevent the error from failing this test
-				return false;
-			});
-
-			runScenario();
-		});
 
 		it('@override: should not throw error on multiple sort', () => {
 			runScenario();

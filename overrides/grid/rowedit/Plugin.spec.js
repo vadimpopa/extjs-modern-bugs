@@ -1,26 +1,25 @@
 describe('Ext.grid.rowedit.Plugin', () => {
 	const RowEditorPluginPrototype = Ext.grid.rowedit.Plugin.prototype;
+	const rowEditingGridCfg = {
+		height: 150,
+		border: true,
+		renderTo: Ext.getBody(),
+		plugins: [{ type: 'rowedit', id: 'rowedit' }],
+		columns: [
+			{ text: 'Id', dataIndex: 'id', editor: { xtype: 'textfield' } },
+			{
+				text: 'Name',
+				dataIndex: 'name',
+				editor: { xtype: 'textfield' },
+			},
+		],
+		store: [
+			{ id: 1, name: 'First' },
+			{ id: 2, name: 'Second' },
+		],
+	};
 
-	describe('ExtJsBug-1: row editor throws when there are changes to discard', () => {
-		const rowEditingGridCfg = {
-			height: 150,
-			border: true,
-			renderTo: Ext.getBody(),
-			plugins: [{ type: 'rowedit', id: 'rowedit' }],
-			columns: [
-				{ text: 'Id', dataIndex: 'id', editor: { xtype: 'textfield' } },
-				{
-					text: 'Name',
-					dataIndex: 'name',
-					editor: { xtype: 'textfield' },
-				},
-			],
-			store: [
-				{ id: 1, name: 'First' },
-				{ id: 2, name: 'Second' },
-			],
-		};
-
+	describe('ExtJsBug-1(IntegratedFix): row editor throws when there are changes to discard', () => {
 		const runScenario = (
 			secondRowSelectedClassAssertion,
 			toRecallUpdateMethod
@@ -55,32 +54,48 @@ describe('Ext.grid.rowedit.Plugin', () => {
 			});
 		};
 
-		it('should throw when editing second instance', (done) => {
-			//Bypass the override
-			cy.stub(
-				RowEditorPluginPrototype,
-				'updateAutoConfirm',
-				RowEditorPluginPrototype.updateAutoConfirm.$previous
-			);
-
-			cy.on('uncaught:exception', (err) => {
-				expect(err.message).to.include(
-					"Cannot read properties of undefined (reading 'updated')"
-				);
-
-				// using mocha's async done callback to finish this test
-				// so we prove that an uncaught exception was thrown
-				done();
-
-				// return false to prevent the error from failing this test
-				return false;
-			});
-
-			runScenario('not.have.class');
-		});
-
 		it('@override: should not throw', () => {
 			runScenario('have.class', true);
+		});
+	});
+
+	describe('ExtJsBug-2(IntegratedFix): double encoded value displayed in roweditorcell', () => {
+		const xssValue = "<a href='#' onmouseover=alert('XSS!')>a.txt</a>";
+
+		const runScenario = (rowEditorCellValue) => {
+			const grid = new Ext.grid.Grid({
+				...rowEditingGridCfg,
+				columns: [
+					{
+						text: 'Id',
+						dataIndex: 'id',
+						editor: { xtype: 'textfield' },
+					},
+					{
+						text: 'Name',
+						dataIndex: 'name',
+						cell: {
+							encodeHtml: true,
+						},
+					},
+				],
+				store: [{ id: 1, name: xssValue }],
+			});
+
+			// We need to reset the drivers, since "drivers" is a "cachedConfig"
+			const plugin = grid.getPlugin('rowedit');
+			const initialDrivers =
+				RowEditorPluginPrototype.getInitialConfig('drivers');
+			plugin.setDrivers(initialDrivers);
+
+			cy.get(`#${grid.getId()}`).within(() => {
+				cy.get('.x-gridrow .x-gridcell').first().dblclick();
+				cy.get('.x-roweditorcell').contains(rowEditorCellValue);
+			});
+		};
+
+		it('@override: it should have single encoded value', () => {
+			runScenario(xssValue);
 		});
 	});
 });

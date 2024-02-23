@@ -1,15 +1,57 @@
 describe('Ext.grid.column.Column', () => {
-	describe('ExtJsBug-4: hiding showInGroups menu item when canGroup is false', () => {
-		const runScenario = function (showInGroupsElAssertion) {
+	const gridConfig = {
+		title: 'People',
+		store: {
+			fields: ['name'],
+			data: [{ name: 'Lisa' }, { name: 'Bart' }],
+		},
+		width: 500,
+		height: 150,
+		renderTo: Ext.getBody(),
+		columns: [
+			{
+				text: 'Name',
+				dataIndex: 'name',
+				flex: 1,
+			},
+		],
+	};
+
+	describe('ExtJsBug-3(IntegratedFix): sorter not updated on first column header tap', () => {
+		it('@override: store to be sorted on first column header tap', () => {
 			const grid = new Ext.grid.Grid({
-				title: 'People',
+				...gridConfig,
 				store: {
 					fields: ['name'],
 					data: [{ name: 'Lisa' }, { name: 'Bart' }],
+					sorters: {
+						property: 'name',
+						direction: 'ASC',
+					},
 				},
-				width: 500,
-				height: 150,
-				renderTo: Ext.getBody(),
+			});
+
+			cy.get(`#${grid.getId()}`)
+				.find('.x-gridcolumn')
+				.as('gridColumnEl')
+				.click();
+
+			cy.get('@gridColumnEl')
+				.should('have.class', 'x-sorted-desc')
+				.then(() => {
+					const storeSorter = grid
+						.getStore()
+						.getSorters()
+						.getByKey('name');
+					expect(storeSorter.getDirection()).to.eq('DESC');
+				});
+		});
+	});
+
+	describe('ExtJsBug-4(IntegratedFix): hiding showInGroups menu item when canGroup is false', () => {
+		const runScenario = function (showInGroupsElAssertion) {
+			const grid = new Ext.grid.Grid({
+				...gridConfig,
 				columns: [
 					{
 						text: 'Name',
@@ -35,25 +77,12 @@ describe('Ext.grid.column.Column', () => {
 							const menuEl = menu.element.dom;
 
 							cy.get(menuEl)
-								.contains('Show in groups')
+								.contains('Show in Groups')
 								.should(showInGroupsElAssertion)
 								.then(() => menu.hide());
 						});
 				});
 		};
-
-		it('showInGroups menu item should be visible', () => {
-			// Bypass the override
-			const columnPrototype = Ext.grid.column.Column.prototype;
-
-			cy.stub(
-				columnPrototype,
-				'beforeShowMenu',
-				columnPrototype.beforeShowMenu.$previous
-			);
-
-			runScenario('be.visible');
-		});
 
 		it('@override: showInGroups menu item should not be visible', () => {
 			runScenario('not.be.visible');

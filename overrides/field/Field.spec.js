@@ -1,7 +1,5 @@
 describe('Ext.field.Field', () => {
-	const FieldPrototype = Ext.field.Field.prototype;
-
-	describe('ExtJsBug-1: non-required field having "requiredCls" applied when required set to "null"', () => {
+	describe('ExtJsBug-1(IntegratedFix): non-required field having "requiredCls" applied when required set to "null"', () => {
 		const fieldCfg = {
 			renderTo: Ext.getBody(),
 			label: 'Non-required field',
@@ -17,17 +15,6 @@ describe('Ext.field.Field', () => {
 				field.requiredCls
 			);
 		};
-
-		it('should have required class', () => {
-			//Bypass the override
-			cy.stub(
-				FieldPrototype,
-				'updateRequired',
-				FieldPrototype.updateRequired.$previous
-			);
-
-			runScenario('have.class');
-		});
 
 		it('@override: should not have required class', () => {
 			runScenario('not.have.class');

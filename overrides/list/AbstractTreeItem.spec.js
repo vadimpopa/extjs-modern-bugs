@@ -1,8 +1,7 @@
 describe('Ext.list.AbstractTreeItem', () => {
-	describe('ExtJsBug-1: Fix unhandled error when adding nodes and the store is filtered', () => {
+	describe('ExtJsBug-1(IntegratedFix): Fix unhandled error when adding nodes and the store is filtered', () => {
 		const runScenario = () => {
-			const treeList = Ext.create({
-				xtype: 'treelist',
+			const treeList = new Ext.list.Tree({
 				store: {
 					root: {
 						expanded: true,
@@ -33,39 +32,6 @@ describe('Ext.list.AbstractTreeItem', () => {
 				cy.get('.x-treelist-item').should('have.length', 1);
 			});
 		};
-
-		it('should throw an error', (done) => {
-			// Rethrow the error. This seems to be some sort of edge case,
-			// sice it does not just simply work as in other cases.
-			// Without rethrowing the error the below "uncaught:exception"
-			// listener is not fired
-			cy.on('fail', (error) => {
-				throw error;
-			});
-
-			cy.on('uncaught:exception', (err) => {
-				expect(err.message).to.include(
-					'Cannot read properties of null'
-				);
-
-				// using mocha's async done callback to finish this test
-				// so we prove that an uncaught exception was thrown
-				done();
-
-				// return false to prevent the error from failing this test
-				return false;
-			});
-
-			// Bypass the override
-			const classPrototype = Ext.list.AbstractTreeItem.prototype;
-			cy.stub(
-				classPrototype,
-				'nodeInsert',
-				classPrototype.nodeInsert.$previous
-			);
-
-			runScenario();
-		});
 
 		it('@override: should not throw an erorr', () => {
 			runScenario();

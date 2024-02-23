@@ -1,5 +1,5 @@
 describe('Ext.dataview.Component', () => {
-	describe('ExtJsBug-1: non-infinite grid scrolls to left, on column sort, when "scrollToTopOnRefresh" enabled', () => {
+	describe('ExtJsBug-1(IntegratedFix): non-infinite grid scrolls to left, on column sort, when "scrollToTopOnRefresh" enabled', () => {
 		const runScenario = function (scrollXAssertion) {
 			const grid = new Ext.grid.Grid({
 				renderTo: Ext.getBody(),
@@ -43,19 +43,6 @@ describe('Ext.dataview.Component', () => {
 					.should(scrollXAssertion, 0);
 			});
 		};
-
-		it('scrolls to left on sort', () => {
-			const ComponentPrototype = Ext.dataview.Component.prototype;
-
-			//Bypass the override
-			cy.stub(
-				ComponentPrototype,
-				'doRefresh',
-				ComponentPrototype.doRefresh.$previous
-			);
-
-			runScenario('eq');
-		});
 
 		it('@override: does not scroll to left on sort', () => {
 			runScenario('not.eq');

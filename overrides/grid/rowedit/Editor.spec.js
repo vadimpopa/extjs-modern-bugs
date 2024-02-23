@@ -1,7 +1,5 @@
 describe('Ext.grid.rowedit.Editor', () => {
-	const RowEditorEditorPrototype = Ext.grid.rowedit.Editor.prototype;
-
-	describe('ExtJsBug-2: top position calculation not implemented for non-infinite grids', () => {
+	describe('ExtJsBug-2(IntegratedFix): top position calculation not implemented for non-infinite grids', () => {
 		const rowEditingGridCfg = {
 			height: 150,
 			renderTo: Ext.getBody(),
@@ -29,23 +27,12 @@ describe('Ext.grid.rowedit.Editor', () => {
 			});
 		};
 
-		it('editor should show at the top regardless of edited row', () => {
-			//Bypass the override
-			cy.stub(
-				RowEditorEditorPrototype,
-				'syncTop',
-				RowEditorEditorPrototype.syncTop.$previous
-			);
-
-			runScenario('eq');
-		});
-
 		it('@override: editor should show over the edited row', () => {
 			runScenario('not.eq');
 		});
 	});
 
-	describe('ExtJsBug-3: thrown error when edited record is moved as a result of sorting', () => {
+	describe('ExtJsBug-3(IntegratedFix): thrown error when edited record is moved as a result of sorting', () => {
 		const rowEditingGridCfg = {
 			height: 150,
 			renderTo: Ext.getBody(),
@@ -75,30 +62,123 @@ describe('Ext.grid.rowedit.Editor', () => {
 			});
 		};
 
-		it('should throw error on edit', (done) => {
-			//Bypass the override
-			cy.stub(
-				RowEditorEditorPrototype,
-				'saveChanges',
-				RowEditorEditorPrototype.saveChanges.$previous
-			);
-
-			cy.on('uncaught:exception', (err) => {
-				expect(err.message).to.include('Cannot set properties of null');
-
-				// using mocha's async done callback to finish this test
-				// so we prove that an uncaught exception was thrown
-				done();
-
-				// return false to prevent the error from failing this test
-				return false;
-			});
-
-			runScenario();
-		});
-
 		it('@override: should not throw error on edit', () => {
 			runScenario();
+		});
+	});
+
+	describe('ExtJsBug-5(IntegratedFix): roweditor buttons cut out when they are top aligned and not enough space', () => {
+		const rowEditingGridCfg = {
+			height: 120,
+			renderTo: Ext.getBody(),
+			plugins: ['rowedit'],
+			store: {
+				data: [{ name: 'First' }, { name: 'Second' }],
+			},
+			columns: [
+				{
+					text: 'Name',
+					dataIndex: 'name',
+					editor: { xtype: 'textareafield' },
+				},
+			],
+		};
+
+		const runScenario = (rowEditButtonAssertion) => {
+			const grid = new Ext.grid.Grid(rowEditingGridCfg);
+
+			cy.get(`#${grid.getId()}`).within(() => {
+				cy.get('.x-gridrow').first().dblclick();
+				cy.get('.x-panel-roweditor-buttons .x-button').should(
+					rowEditButtonAssertion
+				);
+			});
+		};
+
+		it('@override: buttons should be visible', () => {
+			runScenario('be.visible');
+		});
+	});
+
+	describe('ExtJsBug-7(IntegratedFix): editor not adjusting height when there are multiline fields', () => {
+		const rowEditingGridCfg = {
+			renderTo: Ext.getBody(),
+			height: 500,
+			plugins: [{ type: 'rowedit', id: 'rowedit' }],
+			store: {
+				data: [
+					{ name: 'First line' },
+					{ name: 'Second line' },
+					{ name: 'Multiline\nvalue' },
+					{ name: 'Another\nmultiline\nvalue' },
+				],
+			},
+			columns: [
+				{
+					text: 'Name',
+					dataIndex: 'name',
+					width: 400,
+					editor: { xtype: 'textareafield' },
+				},
+			],
+		};
+
+		it('@override: should restore row element height when jumping directly to editing another row', () => {
+			const grid = new Ext.grid.Grid(rowEditingGridCfg);
+
+			cy.get(grid.element.dom).within(() => {
+				let initialLastRowHeight;
+
+				// triggering edit on the last row, which has multiline text,
+				// and as a result will adjust the row element height
+				cy.get('.x-gridrow')
+					.last()
+					.as('lastRow')
+					.should('be.visible')
+					.then((lastRowEl) => {
+						initialLastRowHeight = lastRowEl.height();
+					})
+					.dblclick();
+
+				cy.get('.x-roweditor').should('be.visible');
+
+				// triggering rowedit on another row while still editing the previous one
+				cy.get('.x-gridrow').first().dblclick();
+
+				cy.get('@lastRow').should(($lastRowEl) => {
+					expect($lastRowEl.height()).to.eq(initialLastRowHeight);
+				});
+			});
+		});
+
+		it('@override: should update button position when jumping directly to editing another row', () => {
+			const grid = new Ext.grid.Grid(rowEditingGridCfg);
+
+			cy.get(grid.element.dom).within(() => {
+				cy.get('.x-gridrow').last().should('be.visible').dblclick();
+
+				cy.get('.x-gridrow').first().dblclick();
+
+				cy.get('.x-panel-roweditor-buttons').should(
+					([rowEditorButtonsEl]) => {
+						const rowEditorButtonsBottom =
+							rowEditorButtonsEl.getBoundingClientRect()[
+								'bottom'
+							];
+						const rowEditorBottom = grid
+							.getPlugin('rowedit')
+							.getEditor()
+							.element.dom.getBoundingClientRect()['bottom'];
+
+						// as the buttons wrapper is absolutely positioned,
+						// we compare its page coordinates with the editor
+						// element ones to assert visibility
+						expect(rowEditorButtonsBottom).to.be.gt(
+							rowEditorBottom
+						);
+					}
+				);
+			});
 		});
 	});
 });

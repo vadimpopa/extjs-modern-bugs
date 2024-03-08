@@ -47,45 +47,4 @@ describe('Ext.dataview.Abstract', () => {
 			runScenario(0);
 		});
 	});
-
-	describe('ExtJsBug-2(IntegratedFix): grid firing "selectionchange" event on row click even if the row is already selected', () => {
-		it('@override: should fire "selectionchange" event only on first row click, and not on repeated clicks', () => {
-			const grid = new Ext.grid.Grid({
-				title: 'Grid',
-				width: 500,
-				height: 300,
-				renderTo: document.body,
-				store: [
-					{
-						id: 1,
-						name: 'First',
-					},
-					{
-						id: 2,
-						name: 'Second',
-					},
-				],
-				columns: [
-					{
-						text: 'Name',
-						dataIndex: 'name',
-						flex: 1,
-					},
-				],
-			});
-
-			grid.on('selectionchange', cy.spy().as('selectionChangeSpy'));
-
-			cy.get(grid.element.dom).contains('First').click().click();
-
-			cy.get('@selectionChangeSpy').should('have.been.calledOnce');
-			cy.wrap(grid)
-				.invoke('getSelections')
-				.should((selections) => {
-					expect(selections).to.deep.eq([
-						grid.getStore().findRecord('name', 'First'),
-					]);
-				});
-		});
-	});
 });

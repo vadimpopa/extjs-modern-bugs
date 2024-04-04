@@ -171,19 +171,83 @@ describe('Ext.dataview.List', () => {
 				cy.get(grid.element.dom)
 					.should('be.visible')
 					.within(() => {
+						cy.contains('.x-gridrow', '1')
+							.as('firstRow')
+							.should('be.visible');
+
 						// expanding the docked panel
 						cy.get('.x-docked-bottom .x-tool-type-up').click();
 
-						cy.contains('docked panel content')
-							.should('be.visible')
-							.then(() => {
-								// scrolling horizontally to the last row
-								grid.getScrollable().scrollTo(null, Infinity);
-							});
+						cy.contains('docked panel content').should(
+							'be.visible'
+						);
 
-						cy.log('last row should be visible');
-						cy.get('.x-gridrow').last().should('be.visible');
+						cy.should(() => {
+							// scrolling horizontally to the last row
+							// untill it becomes visible or it times out
+							grid.getScrollable().scrollTo(null, Infinity);
+
+							const lastRowEl = grid.mapToItem(
+								grid.getStore().last(),
+								'dom'
+							);
+
+							expect(lastRowEl).to.be.visible;
+						});
 					});
+			});
+		}
+	);
+
+	describe(
+		'ExtJsBug-5(IntegratedFix): last row not becoming visible on scroll' +
+			' when the corresponding record was added while the grid was fully scrolled to the bottom',
+		() => {
+			it('@override: should be able to scroll to the last row', () => {
+				grid = new Ext.grid.Grid({
+					renderTo: document.body,
+					width: 400,
+					height: 300,
+					border: true,
+					infinite: true,
+					title: 'Infinite grid',
+					store: {
+						type: 'array',
+						fields: ['index'],
+						data: Array(50)
+							.fill()
+							.map((_, index) => [index]),
+					},
+					columns: [
+						{
+							dataIndex: 'index',
+							text: 'Index',
+							flex: 1,
+						},
+					],
+				});
+
+				cy.get(grid.element.dom).should(() => {
+					const scrollable = grid.getScrollable();
+
+					// we need to incrementally scroll (as the user does),
+					// because programatically scrolling to the last record
+					// is not so reliable for infinite grids
+					scrollable.scrollBy(0, 300);
+					expect(scrollable.getPosition()).to.eql(
+						scrollable.getMaxPosition()
+					);
+				});
+
+				// we have scrolled to the last row
+				cy.contains('.x-gridrow', '49')
+					.should('be.visible')
+					.then(() => {
+						grid.getStore().add({ index: 123 });
+						grid.getScrollable().scrollBy(0, 100);
+					});
+
+				cy.contains('.x-gridrow', '123').should('be.visible');
 			});
 		}
 	);
